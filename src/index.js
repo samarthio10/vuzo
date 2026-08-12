@@ -5,4 +5,12 @@ dotenv.config({
   path: './src/.env',
 });
 
-connectDB();
+const Port = process.env.PORT;
+
+connectDB()
+  .then(() => {
+    app.listen('listening on ${Port}');
+  })
+  .catch((err) => {
+    console.error('MONGODB connection error', error);
+  });
