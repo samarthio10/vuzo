@@ -3,5 +3,5 @@ import { Router } from 'express';
 
 const router = Router();
 
-router.route('/healthcheck').post(healthCheckUp);
+router.route('/healthcheck').get(healthCheckUp);
 export default router;

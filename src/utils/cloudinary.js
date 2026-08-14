@@ -1,11 +1,10 @@
 import { v2 as cloudinary } from 'cloudinary';
-import { ALL } from 'dns';
 import fs from 'fs';
 
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_NAME,
-  api_key: process.env.CLOUDINARY_KEY,
-  api_secret: process.env.CLOUDINARY_SECRET,
+  cloud_name: 'edxlalwu',
+  api_key: '271345757761358',
+  api_secret: 'Yd2YzZ-gHA9OMt6b79Aoj-k5Hyg',
 });
 
 const uploadOnCloudinary = async function (localFilepath) {
@@ -15,6 +14,7 @@ const uploadOnCloudinary = async function (localFilepath) {
       resource_type: 'auto',
     });
     console.log('files uploaded on cloudinary', response.url);
+    fs.unlinkSync(localFilepath);
     return response;
   } catch (error) {
     fs.unlinkSync(localFilepath);
