@@ -3,6 +3,7 @@ import ApiError from '../utils/apiError.js';
 import { User } from '../models/user.model.js';
 import uploadOnCloudinary from '../utils/cloudinary.js';
 import ApiResponse from '../utils/apiResponse.js';
+import { validate } from 'uuid';
 
 const generateAccessAndRefreshToken = async (userId) => {
   try {
@@ -141,4 +142,135 @@ const userLogout = asyncHandler(async (req, res) => {
     .clearCookie('refreshToken', methods)
     .json(new ApiResponse(200, {}, 'logout successful'));
 });
-export { userRegister, userLogin, userLogout };
+
+const accessTokenRefresh = asyncHandler(async (req, res) => {
+  const incomingRefreshToken = req.cookie.refreshToken || req.body.refreshToken;
+  if (!incomingRefreshToken) {
+    throw new ApiError(401, 'unauthorized refresh');
+  }
+
+  try {
+    const decodeToken = jwtVerify(
+      incomingRefreshToken,
+      process.env.REFRESH_TOKEN_SECRET
+    );
+    const user = user.findById(decodeToken._id);
+    4;
+    if (!user) {
+      throw new ApiError(404, 'invalid refreshToken');
+    }
+
+    if (incomingRefreshToken != user?.refreshToken) {
+      throw new ApiError(401, 'refresh token is expired or used');
+    }
+
+    const methods = {
+      httpOnly: true,
+      secure: true,
+    };
+
+    const { accessToken, refreshToken } = await generateAccessAndRefreshToken(
+      user._id
+    );
+    res
+      .status(200)
+      .cookie('accessToken', accessToken, methods)
+      .cookie('refreshToken', refreshToken, methods)
+      .json(
+        new ApiResponse(
+          200,
+          { accessToken, refreshToken },
+          'access token refreshed successfully'
+        )
+      );
+  } catch (error) {
+    throw new ApiError(401, err?.message || 'invalid refresh token');
+  }
+});
+
+const chngePassword = asyncHandler(async (req, res) => {
+  const { newPassword, oldPassword } = req.body;
+
+  const user = await User.findById(req.user?._id);
+  const isPasswordtrue = await user.isPasswordCorrect(oldPassword);
+  if (!isPasswordtrue) {
+    throw new ApiError(401, 'invalid old password');
+  }
+  user.password = newPassword;
+  await user.save({ validateBeforeSave: false });
+  return res.status(200).json(new ApiResponse(200, {}, 'password changed'));
+});
+
+const getCurrentUser = asyncHandler(async (req, res) => {
+  res
+    .status(200)
+    .json(new ApiResponse(200, req.user, 'user successfully fetched'));
+});
+const updateAccDetails = asyncHandler(async (req, res) => {
+  const { fullname, email } = req.body;
+  if (!fullname || !email) {
+    throw new ApiError(401, 'invalid credential');
+    const user = User.findByIdAndUpdate(
+      req.user?._id,
+      { $set: { fullname, email } },
+      { new: true }
+    ).select('-password');
+    res.status(200).json(new ApiResponse(200, user, 'account details updated'));
+  }
+});
+const updateAvatarImage = asyncHandler(async (req, res) => {
+  const avatarLocalpath = req.file?.path;
+  if (!avatarLocalpath) {
+    throw new ApiError(401, 'avatar file is missing');
+  }
+  const avatar = await uploadOnCloudinary(avatarLocalpath);
+  if (!avatar.url) {
+    throw new ApiError(401, 'error while uploading avatar');
+  }
+  const user = User.findByIdAndUpdate(
+    req.user?._id,
+    {
+      $set: {
+        avatar: avatar.url,
+      },
+    },
+    { new: true }.select('-password')
+  );
+  res
+    .status(200)
+    .json(new ApiResponse(200, user, 'user  avatar updated successfully'));
+});
+
+const updateCoverImage = asyncHandler(async (req, res) => {
+  const coverImageLocalPath = req.file?.path;
+  if (!coverImageLocalPath) {
+    throw new ApiError(401, 'coverImage file is missing');
+  }
+  const coverImage = await uploadOnCloudinary(coverImageLocalPath);
+  if (!coverImage.url) {
+    throw new ApiError(401, 'error while uploading coverImage');
+  }
+  const user = User.findByIdAndUpdate(
+    req.user._id,
+    {
+      $set: {
+        coverImage: coverImage.url,
+      },
+    },
+    { new: true }
+  ).select('-password');
+  res
+    .status(200)
+    .json(new ApiResponse(200, user, 'user  coverimage updated successfully'));
+  1;
+});
+
+export {
+  userRegister,
+  userLogin,
+  userLogout,
+  accessTokenRefresh,
+  updateAccDetails,
+  updateAvatarImage,
+  updateCoverImage,
+};
