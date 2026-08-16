@@ -1,7 +1,9 @@
+import jwt from 'jsonwebtoken'; // ADDED — needed for jwt.verify() below
 import asyncHandler from '../utils/asyncHandler.js';
 import ApiError from '../utils/apiError.js';
 import { User } from '../models/user.model.js';
-import uploadOnCloudinary, {
+import {
+  uploadOnCloudinary,
   deleteFromCloudinary,
 } from '../utils/cloudinary.js';
 import ApiResponse from '../utils/apiResponse.js';
@@ -148,13 +150,16 @@ const userLogout = asyncHandler(async (req, res) => {
 });
 
 const accessTokenRefresh = asyncHandler(async (req, res) => {
-  const incomingRefreshToken = req.cookie.refreshToken || req.body.refreshToken;
+  // FIXED — req.cookie → req.cookies (was undefined, crashed on .refreshToken)
+  const incomingRefreshToken =
+    req.cookies.refreshToken || req.body.refreshToken;
   if (!incomingRefreshToken) {
     throw new ApiError(401, 'unauthorized refresh');
   }
 
   try {
-    const decodeToken = jwtVerify(
+    // FIXED — jwtVerify (undefined, was your middleware's name) → jwt.verify
+    const decodeToken = jwt.verify(
       incomingRefreshToken,
       process.env.REFRESH_TOKEN_SECRET
     );
@@ -187,7 +192,8 @@ const accessTokenRefresh = asyncHandler(async (req, res) => {
         )
       );
   } catch (error) {
-    throw new ApiError(401, err?.message || 'invalid refresh token');
+    // FIXED — err (undefined) → error (the actual caught variable)
+    throw new ApiError(401, error?.message || 'invalid refresh token');
   }
 });
 
@@ -209,6 +215,7 @@ const getCurrentUser = asyncHandler(async (req, res) => {
     .status(200)
     .json(new ApiResponse(200, req.user, 'user successfully fetched'));
 });
+
 const updateAccDetails = asyncHandler(async (req, res) => {
   const { fullname, email } = req.body;
   if (!fullname || !email) {
@@ -221,6 +228,7 @@ const updateAccDetails = asyncHandler(async (req, res) => {
   ).select('-password');
   res.status(200).json(new ApiResponse(200, user, 'account details updated'));
 });
+
 const updateAvatarImage = asyncHandler(async (req, res) => {
   const avatarLocalpath = req.file?.path;
   if (!avatarLocalpath) {
@@ -230,15 +238,17 @@ const updateAvatarImage = asyncHandler(async (req, res) => {
   if (!avatar.url) {
     throw new ApiError(401, 'error while uploading avatar');
   }
-  const user = User.findByIdAndUpdate(
+  // FIXED — was missing `await`, and `{ new: true }.select(...)` was calling
+  // .select() on the plain options object instead of chaining it on the query
+  const user = await User.findByIdAndUpdate(
     req.user?._id,
     {
       $set: {
         avatar: avatar.url,
       },
     },
-    { new: true }.select('-password')
-  );
+    { new: true }
+  ).select('-password');
   res
     .status(200)
     .json(new ApiResponse(200, user, 'user  avatar updated successfully'));
@@ -253,7 +263,7 @@ const updateCoverImage = asyncHandler(async (req, res) => {
   if (!coverImage.url) {
     throw new ApiError(401, 'error while uploading coverImage');
   }
-  const user = User.findByIdAndUpdate(
+  const user = await User.findByIdAndUpdate(
     req.user._id,
     {
       $set: {
