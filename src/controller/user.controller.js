@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken'; // ADDED — needed for jwt.verify() below
+import mongoose from 'mongoose';
 import asyncHandler from '../utils/asyncHandler.js';
 import ApiError from '../utils/apiError.js';
 import { User } from '../models/user.model.js';
@@ -32,16 +33,18 @@ const generateAccessAndRefreshToken = async (userId) => {
 };
 
 const userRegister = asyncHandler(async (req, res) => {
-  const { username, fullname, email, password } = req.body;
+  const { username, fullname, email, password } = req.body || {};
 
   if (
-    [username, fullname, email, password].some((field) => field?.trim() === '')
+    [username, fullname, email, password].some(
+      (field) => !field || field.trim() === ''
+    )
   ) {
     throw new ApiError(400, 'All fields are required');
   }
 
   const existedUser = await User.findOne({
-    $or: [{ username }, { email }],
+    $or: [{ username: username.toLowerCase() }, { email: email.toLowerCase() }],
   });
 
   if (existedUser) {
@@ -83,7 +86,7 @@ const userRegister = asyncHandler(async (req, res) => {
 });
 
 const userLogin = asyncHandler(async (req, res) => {
-  const { username, email, password, fullname } = req.body;
+  const { username, email, password, fullname } = req.body || {};
 
   if (!username && !email) {
     throw new ApiError(400, 'username or email should be entered');
@@ -114,7 +117,7 @@ const userLogin = asyncHandler(async (req, res) => {
 
   const options = {
     httpOnly: true,
-    secure: true,
+    secure: process.env.NODE_ENV === 'production',
   };
 
   res
@@ -136,11 +139,11 @@ const userLogout = asyncHandler(async (req, res) => {
     {
       $set: { refreshToken: undefined },
     },
-    { new: true }
+    { returnDocument: 'after' }
   );
   const methods = {
     httpOnly: true,
-    secure: true,
+    secure: process.env.NODE_ENV === 'production',
   };
   res
     .status(200)
@@ -152,7 +155,7 @@ const userLogout = asyncHandler(async (req, res) => {
 const accessTokenRefresh = asyncHandler(async (req, res) => {
   // FIXED — req.cookie → req.cookies (was undefined, crashed on .refreshToken)
   const incomingRefreshToken =
-    req.cookies.refreshToken || req.body.refreshToken;
+    req.cookies?.refreshToken || req.body?.refreshToken;
   if (!incomingRefreshToken) {
     throw new ApiError(401, 'unauthorized refresh');
   }
@@ -174,7 +177,7 @@ const accessTokenRefresh = asyncHandler(async (req, res) => {
 
     const methods = {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === 'production',
     };
 
     const { accessToken, refreshToken } = await generateAccessAndRefreshToken(
@@ -200,6 +203,10 @@ const accessTokenRefresh = asyncHandler(async (req, res) => {
 const chngePassword = asyncHandler(async (req, res) => {
   const { newPassword, oldPassword } = req.body;
 
+  if (!oldPassword || !newPassword) {
+    throw new ApiError(400, 'old password and new password are required');
+  }
+
   const user = await User.findById(req.user?._id);
   const isPasswordtrue = await user.isPasswordCorrect(oldPassword);
   if (!isPasswordtrue) {
@@ -221,10 +228,17 @@ const updateAccDetails = asyncHandler(async (req, res) => {
   if (!fullname || !email) {
     throw new ApiError(401, 'invalid credential');
   }
+  const existedUser = await User.findOne({
+    email: email.toLowerCase(),
+    _id: { $ne: req.user?._id },
+  });
+  if (existedUser) {
+    throw new ApiError(409, 'email already exists');
+  }
   const user = await User.findByIdAndUpdate(
     req.user?._id,
     { $set: { fullname, email } },
-    { new: true }
+    { returnDocument: 'after' }
   ).select('-password');
   res.status(200).json(new ApiResponse(200, user, 'account details updated'));
 });
@@ -235,7 +249,7 @@ const updateAvatarImage = asyncHandler(async (req, res) => {
     throw new ApiError(401, 'avatar file is missing');
   }
   const avatar = await uploadOnCloudinary(avatarLocalpath);
-  if (!avatar.url) {
+  if (!avatar?.url) {
     throw new ApiError(401, 'error while uploading avatar');
   }
   // FIXED — was missing `await`, and `{ new: true }.select(...)` was calling
@@ -247,7 +261,7 @@ const updateAvatarImage = asyncHandler(async (req, res) => {
         avatar: avatar.url,
       },
     },
-    { new: true }
+    { returnDocument: 'after' }
   ).select('-password');
   res
     .status(200)
@@ -260,7 +274,7 @@ const updateCoverImage = asyncHandler(async (req, res) => {
     throw new ApiError(401, 'coverImage file is missing');
   }
   const coverImage = await uploadOnCloudinary(coverImageLocalPath);
-  if (!coverImage.url) {
+  if (!coverImage?.url) {
     throw new ApiError(401, 'error while uploading coverImage');
   }
   const user = await User.findByIdAndUpdate(
@@ -270,7 +284,7 @@ const updateCoverImage = asyncHandler(async (req, res) => {
         coverImage: coverImage.url,
       },
     },
-    { new: true }
+    { returnDocument: 'after' }
   ).select('-password');
   res
     .status(200)
@@ -321,7 +335,7 @@ const publishAVideo = asyncHandler(async (req, res) => {
 const deleteVideo = asyncHandler(async (req, res) => {
   const { videoId } = req.params;
 
-  if (!videoId) {
+  if (!videoId || !mongoose.isValidObjectId(videoId)) {
     throw new ApiError(400, 'invalid videoId');
   }
 
@@ -350,6 +364,8 @@ export {
   userLogin,
   userLogout,
   accessTokenRefresh,
+  chngePassword,
+  getCurrentUser,
   updateAccDetails,
   updateAvatarImage,
   updateCoverImage,

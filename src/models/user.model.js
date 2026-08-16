@@ -23,6 +23,9 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    refreshToken: {
+      type: String,
+    },
     fullname: {
       type: String,
       required: true,
