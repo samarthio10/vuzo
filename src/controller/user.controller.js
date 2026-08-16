@@ -1,9 +1,13 @@
 import asyncHandler from '../utils/asyncHandler.js';
 import ApiError from '../utils/apiError.js';
 import { User } from '../models/user.model.js';
-import uploadOnCloudinary from '../utils/cloudinary.js';
+import uploadOnCloudinary, {
+  deleteFromCloudinary,
+} from '../utils/cloudinary.js';
 import ApiResponse from '../utils/apiResponse.js';
 import { validate } from 'uuid';
+import { upload } from '../middleware/multer.middleware.js';
+import { Video } from '../models/video.model.js';
 
 const generateAccessAndRefreshToken = async (userId) => {
   try {
@@ -154,8 +158,7 @@ const accessTokenRefresh = asyncHandler(async (req, res) => {
       incomingRefreshToken,
       process.env.REFRESH_TOKEN_SECRET
     );
-    const user = user.findById(decodeToken._id);
-    4;
+    const user = await User.findById(decodeToken._id);
     if (!user) {
       throw new ApiError(404, 'invalid refreshToken');
     }
@@ -210,13 +213,13 @@ const updateAccDetails = asyncHandler(async (req, res) => {
   const { fullname, email } = req.body;
   if (!fullname || !email) {
     throw new ApiError(401, 'invalid credential');
-    const user = User.findByIdAndUpdate(
-      req.user?._id,
-      { $set: { fullname, email } },
-      { new: true }
-    ).select('-password');
-    res.status(200).json(new ApiResponse(200, user, 'account details updated'));
   }
+  const user = await User.findByIdAndUpdate(
+    req.user?._id,
+    { $set: { fullname, email } },
+    { new: true }
+  ).select('-password');
+  res.status(200).json(new ApiResponse(200, user, 'account details updated'));
 });
 const updateAvatarImage = asyncHandler(async (req, res) => {
   const avatarLocalpath = req.file?.path;
@@ -262,7 +265,74 @@ const updateCoverImage = asyncHandler(async (req, res) => {
   res
     .status(200)
     .json(new ApiResponse(200, user, 'user  coverimage updated successfully'));
-  1;
+});
+
+const publishAVideo = asyncHandler(async (req, res) => {
+  const { title, description } = req.body;
+
+  if (!title?.trim() || !description?.trim()) {
+    throw new ApiError(400, 'title and description are required');
+  }
+
+  const videoLocalPath = req.files?.videoFile?.[0]?.path;
+  const thumbnailLocalPath = req.files?.thumbnail?.[0]?.path;
+
+  if (!videoLocalPath) {
+    throw new ApiError(400, 'videoFile is missing');
+  }
+  if (!thumbnailLocalPath) {
+    throw new ApiError(400, 'thumbnail is required');
+  }
+
+  const videoFile = await uploadOnCloudinary(videoLocalPath);
+  const thumbnail = await uploadOnCloudinary(thumbnailLocalPath);
+
+  if (!videoFile?.url) {
+    throw new ApiError(500, 'error uploading videoFile on cloudinary');
+  }
+  if (!thumbnail?.url) {
+    throw new ApiError(500, 'error uploading thumbnail on cloudinary');
+  }
+
+  const video = await Video.create({
+    videoFile: videoFile.url,
+    thumbnail: thumbnail.url,
+    title,
+    description,
+    duration: videoFile.duration,
+    owner: req.user._id,
+  });
+
+  return res
+    .status(201)
+    .json(new ApiResponse(201, video, 'video uploaded successfully'));
+});
+
+const deleteVideo = asyncHandler(async (req, res) => {
+  const { videoId } = req.params;
+
+  if (!videoId) {
+    throw new ApiError(400, 'invalid videoId');
+  }
+
+  const video = await Video.findById(videoId);
+
+  if (!video) {
+    throw new ApiError(404, 'video not found');
+  }
+
+  if (video.owner.toString() !== req.user._id.toString()) {
+    throw new ApiError(403, 'you are not allowed to delete this video');
+  }
+
+  await deleteFromCloudinary(video.videoFile, 'video');
+  await deleteFromCloudinary(video.thumbnail, 'image');
+
+  await Video.findByIdAndDelete(videoId);
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, {}, 'video deleted successfully'));
 });
 
 export {
@@ -273,4 +343,6 @@ export {
   updateAccDetails,
   updateAvatarImage,
   updateCoverImage,
+  publishAVideo,
+  deleteVideo,
 };
